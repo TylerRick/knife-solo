@@ -99,14 +99,42 @@ class Chef
         raise "The chef gem on #{host} is out of date. Please run `#{$0} prepare #{ssh_args}` to upgrade Chef to #{constraint}." unless result.success?
       end
 
+      def script_to_load_rvm
+        <<-BASH
+          # Does the chef directory have an .rvmrc that they would like to be used?
+          ls -l #{chef_path}/.rvmrc
+          if [[ -s #{chef_path}/.rvmrc ]]; then
+            if [[ -s "$HOME/.rvm/scripts/rvm" ]] ; then
+
+              # First try to load from a user install
+              source "$HOME/.rvm/scripts/rvm"
+
+            elif [[ -s "/usr/local/rvm/scripts/rvm" ]] ; then
+
+              # Then try to load from a system-wide install
+              source "/usr/local/rvm/scripts/rvm"
+
+            fi
+
+            # Change to the chef directory containing the .rvmrc.
+            # This will cause it to be loaded and executed.
+            cd #{chef_path}
+
+            # Output the current ruby version and gemset.
+            rvm current
+          fi &&
+        BASH
+      end
+
       def cook
         logging_arg = "-l debug" if config[:verbosity] > 0
-
-        stream_command <<-BASH
-          chef-solo -c #{chef_path}/solo.rb \
-                         -j #{chef_path}/#{node_config} \
-                         #{logging_arg}
+        command = <<-BASH
+          #{script_to_load_rvm}
+          rvmsudo chef-solo -c #{chef_path}/solo.rb \
+                    -j #{chef_path}/#{node_config} \
+                    #{logging_arg}
         BASH
+        stream_command command
       end
     end
   end
